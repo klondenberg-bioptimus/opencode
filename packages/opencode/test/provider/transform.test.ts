@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { ProviderTransform } from "../../src/provider/transform"
 import { ModelID, ProviderID } from "../../src/provider/schema"
+import type { Provider } from "../../src/provider/provider"
 
 const OUTPUT_TOKEN_MAX = 32000
 
@@ -1165,10 +1166,10 @@ describe("ProviderTransform.message - anthropic empty content filtering", () => 
   test("filters empty content for bedrock provider", () => {
     const bedrockModel = {
       ...anthropicModel,
-      id: "amazon-bedrock/anthropic.claude-opus-4-6",
+      id: "amazon-bedrock/anthropic.claude-sonnet-4-5",
       providerID: "amazon-bedrock",
       api: {
-        id: "anthropic.claude-opus-4-6",
+        id: "anthropic.claude-sonnet-4-5",
         url: "https://bedrock-runtime.us-east-1.amazonaws.com",
         npm: "@ai-sdk/amazon-bedrock",
       },
@@ -2754,5 +2755,159 @@ describe("ProviderTransform.variants", () => {
       const result = ProviderTransform.variants(model)
       expect(result).toEqual({})
     })
+  })
+})
+
+describe("ProviderTransform.supportsAssistantPrefill", () => {
+  function createModel(providerID: string, npm: string, apiId: string): Provider.Model {
+    return {
+      id: ModelID.make(`${providerID}/${apiId}`),
+      providerID: ProviderID.make(providerID),
+      api: {
+        id: apiId,
+        url: "https://api.example.com",
+        npm,
+      },
+      name: "Test Model",
+      capabilities: {
+        temperature: true,
+        reasoning: false,
+        attachment: true,
+        toolcall: true,
+        input: { text: true, audio: false, image: true, video: false, pdf: true },
+        output: { text: true, audio: false, image: false, video: false, pdf: false },
+        interleaved: false,
+      },
+      cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+      limit: { context: 100000, output: 8192 },
+      status: "active" as const,
+      options: {},
+      headers: {},
+      release_date: "2025-01-01",
+    }
+  }
+
+  test("returns false for GitHub Copilot Claude Opus 4.6 (dot notation)", () => {
+    const model = createModel("github-copilot", "@ai-sdk/github-copilot", "claude-opus-4.6")
+    expect(ProviderTransform.supportsAssistantPrefill(model)).toBe(false)
+  })
+
+  test("returns false for GitHub Copilot Claude Opus 4.6 (dash notation)", () => {
+    const model = createModel("github-copilot", "@ai-sdk/github-copilot", "claude-opus-4-6")
+    expect(ProviderTransform.supportsAssistantPrefill(model)).toBe(false)
+  })
+
+  test("returns false for GitHub Copilot Claude Sonnet 4.6", () => {
+    const model = createModel("github-copilot", "@ai-sdk/github-copilot", "claude-sonnet-4.6")
+    expect(ProviderTransform.supportsAssistantPrefill(model)).toBe(false)
+  })
+
+  test("returns false for Anthropic Claude Opus 4.6", () => {
+    const model = createModel("anthropic", "@ai-sdk/anthropic", "claude-opus-4.6")
+    expect(ProviderTransform.supportsAssistantPrefill(model)).toBe(false)
+  })
+
+  test("returns false for Anthropic Claude Sonnet 4.6", () => {
+    const model = createModel("anthropic", "@ai-sdk/anthropic", "claude-sonnet-4-6")
+    expect(ProviderTransform.supportsAssistantPrefill(model)).toBe(false)
+  })
+
+  test("returns false for OpenRouter Claude Opus 4.6", () => {
+    const model = createModel("openrouter", "@openrouter/ai-sdk-provider", "anthropic/claude-opus-4.6")
+    expect(ProviderTransform.supportsAssistantPrefill(model)).toBe(false)
+  })
+
+  test("returns true for Anthropic Claude 3.5 Sonnet (non-4.6)", () => {
+    const model = createModel("anthropic", "@ai-sdk/anthropic", "claude-3-5-sonnet-20241022")
+    expect(ProviderTransform.supportsAssistantPrefill(model)).toBe(true)
+  })
+
+  test("returns true for Anthropic Claude Opus 4.5", () => {
+    const model = createModel("anthropic", "@ai-sdk/anthropic", "claude-opus-4-5-20251101")
+    expect(ProviderTransform.supportsAssistantPrefill(model)).toBe(true)
+  })
+
+  test("returns true for OpenAI models", () => {
+    const model = createModel("openai", "@ai-sdk/openai", "gpt-4")
+    expect(ProviderTransform.supportsAssistantPrefill(model)).toBe(true)
+  })
+
+  test("returns true for GitHub Copilot non-Claude models", () => {
+    const model = createModel("github-copilot", "@ai-sdk/github-copilot", "gpt-4")
+    expect(ProviderTransform.supportsAssistantPrefill(model)).toBe(true)
+  })
+
+  test("returns true for generic models", () => {
+    const model = createModel("custom", "@ai-sdk/openai-compatible", "custom-model")
+    expect(ProviderTransform.supportsAssistantPrefill(model)).toBe(true)
+  })
+})
+
+describe("ProviderTransform.message - strip trailing assistant for Claude 4.6", () => {
+  const claude46: Provider.Model = {
+    id: ModelID.make("anthropic/claude-opus-4-6"),
+    providerID: ProviderID.make("anthropic"),
+    api: { id: "claude-opus-4-6", url: "https://api.anthropic.com", npm: "@ai-sdk/anthropic" },
+    name: "Claude Opus 4.6",
+    capabilities: {
+      temperature: true,
+      reasoning: false,
+      attachment: true,
+      toolcall: true,
+      input: { text: true, audio: false, image: true, video: false, pdf: true },
+      output: { text: true, audio: false, image: false, video: false, pdf: false },
+      interleaved: false,
+    },
+    cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+    limit: { context: 200000, output: 32000 },
+    status: "active" as const,
+    options: {},
+    headers: {},
+    release_date: "2025-01-01",
+  }
+
+  const claude35: Provider.Model = {
+    ...claude46,
+    id: ModelID.make("anthropic/claude-3-5-sonnet-20241022"),
+    api: { id: "claude-3-5-sonnet-20241022", url: "https://api.anthropic.com", npm: "@ai-sdk/anthropic" },
+    name: "Claude 3.5 Sonnet",
+  }
+
+  const msgs = [
+    { role: "user" as const, content: "hello" },
+    { role: "assistant" as const, content: "hi" },
+    { role: "user" as const, content: "do a thing" },
+    { role: "assistant" as const, content: "done" },
+  ]
+
+  test("strips trailing assistant message for Claude 4.6", () => {
+    const result = ProviderTransform.message(msgs, claude46, {})
+    expect(result[result.length - 1].role).toBe("user")
+  })
+
+  test("preserves trailing assistant message for Claude 3.5 (supports prefill)", () => {
+    const result = ProviderTransform.message(msgs, claude35, {})
+    expect(result[result.length - 1].role).toBe("assistant")
+  })
+
+  test("strips multiple trailing assistant messages for Claude 4.6", () => {
+    const msgsMulti = [
+      { role: "user" as const, content: "hello" },
+      { role: "assistant" as const, content: "hi" },
+      { role: "assistant" as const, content: "also this" },
+    ]
+    const result = ProviderTransform.message(msgsMulti, claude46, {})
+    expect(result[result.length - 1].role).toBe("user")
+  })
+
+  test("does not strip if last message is user for Claude 4.6", () => {
+    const msgsUser = [
+      { role: "user" as const, content: "hello" },
+      { role: "assistant" as const, content: "hi" },
+      { role: "user" as const, content: "bye" },
+    ]
+    const result = ProviderTransform.message(msgsUser, claude46, {})
+    expect(result[result.length - 1].role).toBe("user")
+    expect(result.length).toBe(3)
   })
 })
